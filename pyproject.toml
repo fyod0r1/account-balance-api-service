@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "account-balance-api-service"
+version = "0.1.0"
+description = "Async REST API for users, accounts, admins and payment webhooks"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.13.2",
+    "asyncpg>=0.29.0",
+    "email-validator>=2.2.0",
+    "fastapi>=0.111.0",
+    "greenlet>=3.0.3",
+    "pyjwt>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "sqlalchemy>=2.0.31",
+    "uvicorn[standard]>=0.30.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "aiosqlite>=0.20.0",
+    "httpx>=0.27.0",
+    "playwright>=1.46.0",
+    "pytest>=8.2.2",
+    "pytest-asyncio>=0.23.7",
+    "ruff>=0.5.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-p no:pytest_playwright"
+markers = [
+    "integration: tests that require a real PostgreSQL database",
+    "e2e: tests that require a running application",
+    "browser: tests that require a browser runtime",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

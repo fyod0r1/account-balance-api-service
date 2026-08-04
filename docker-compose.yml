@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: account_balance
+      POSTGRES_USER: account_balance
+      POSTGRES_PASSWORD: account_balance
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U account_balance -d account_balance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://account_balance:account_balance@postgres:5432/account_balance
+      JWT_SECRET_KEY: change-me-use-at-least-32-bytes-secret
+      PAYMENT_WEBHOOK_SECRET: gfdmhghif38yrf9ew0jkf32
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

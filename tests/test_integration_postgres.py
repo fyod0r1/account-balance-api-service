@@ -2,18 +2,17 @@ import asyncio
 import os
 import random
 import uuid
-from collections.abc import AsyncGenerator
 from decimal import Decimal
 
-import httpx
 import pytest
+from sanic_testing import TestManager
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import Settings, get_settings
-from app.db import get_session
-from app.main import app
+from app.config import Settings
+from app.main import create_app
 from app.models import Account, Payment, User, UserRole
+from tests.conftest import SanicClientAdapter
 from tests.helpers import webhook_payload
 
 pytestmark = pytest.mark.integration
@@ -52,7 +51,6 @@ async def postgres_sessionmaker():
     try:
         yield Session
     finally:
-        app.dependency_overrides.clear()
         await engine.dispose()
 
 
@@ -99,22 +97,19 @@ async def test_postgres_webhook_flow_creates_payment_and_updates_balance(
     account_id = random.randint(100_000, 999_999)
     transaction_id = f"integration-webhook-{uuid.uuid4()}"
 
-    async def override_session() -> AsyncGenerator[AsyncSession, None]:
-        async with postgres_sessionmaker() as session:
-            yield session
-
-    def override_settings() -> Settings:
-        return Settings(
+    test_app = create_app(
+        app_settings=Settings(
             database_url="postgresql+asyncpg://unused:unused@localhost/unused",
             jwt_secret_key="test-secret-use-at-least-32-bytes",
             payment_webhook_secret="gfdmhghif38yrf9ew0jkf32",
-        )
+        ),
+        app_session_factory=postgres_sessionmaker,
+        dispose=lambda: None,
+    )
+    TestManager(test_app)
 
-    app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_settings] = override_settings
-
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with test_app.asgi_client as sanic_client:
+        client = SanicClientAdapter(sanic_client)
         response = await client.post(
             "/api/v1/payments/webhook",
             json=webhook_payload(
@@ -152,27 +147,24 @@ async def test_concurrent_duplicate_webhooks_increment_balance_once(
         session.add(Account(id=account_id, user_id=1, balance=Decimal("0.00")))
         await session.commit()
 
-    async def override_session() -> AsyncGenerator[AsyncSession, None]:
-        async with postgres_sessionmaker() as session:
-            yield session
-
-    def override_settings() -> Settings:
-        return Settings(
+    test_app = create_app(
+        app_settings=Settings(
             database_url="postgresql+asyncpg://unused:unused@localhost/unused",
             jwt_secret_key="test-secret-use-at-least-32-bytes",
             payment_webhook_secret="gfdmhghif38yrf9ew0jkf32",
-        )
-
-    app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_settings] = override_settings
+        ),
+        app_session_factory=postgres_sessionmaker,
+        dispose=lambda: None,
+    )
+    TestManager(test_app)
 
     payload = webhook_payload(
         transaction_id=transaction_id,
         account_id=account_id,
         amount=Decimal("42.00"),
     )
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with test_app.asgi_client as sanic_client:
+        client = SanicClientAdapter(sanic_client)
         first, second = await asyncio.gather(
             client.post("/api/v1/payments/webhook", json=payload),
             client.post("/api/v1/payments/webhook", json=payload),

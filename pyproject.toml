@@ -11,12 +11,11 @@ dependencies = [
     "alembic>=1.13.2",
     "asyncpg>=0.29.0",
     "email-validator>=2.2.0",
-    "fastapi>=0.111.0",
     "greenlet>=3.0.3",
     "pyjwt>=2.8.0",
     "pydantic-settings>=2.4.0",
+    "sanic>=24.6.0",
     "sqlalchemy>=2.0.31",
-    "uvicorn[standard]>=0.30.1",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +26,7 @@ dev = [
     "pytest>=8.2.2",
     "pytest-asyncio>=0.23.7",
     "ruff>=0.5.0",
+    "sanic-testing>=24.6.0",
 ]
 
 [tool.pytest.ini_options]

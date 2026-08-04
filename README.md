@@ -4,11 +4,23 @@
 
 Стек:
 
-- FastAPI как допустимая альтернатива Sanic;
+- Sanic;
 - PostgreSQL;
 - SQLAlchemy async ORM;
 - Alembic;
 - Docker Compose.
+
+## Архитектура
+
+Проект разделен на слои:
+
+- `app/api` - Sanic blueprints, HTTP parsing и response mapping;
+- `app/services` - application/business logic для auth, users и payment webhook;
+- `app/models.py` - SQLAlchemy ORM persistence models;
+- `app/schemas.py` - Pydantic request/response contracts;
+- `app/main.py` - composition root: создание Sanic app, регистрация blueprints и lifecycle hooks.
+
+Публичный HTTP contract отделен от бизнес-сценариев: handlers не управляют webhook flow напрямую, а вызывают service layer.
 
 ## Запуск через Docker Compose
 
@@ -18,7 +30,7 @@ docker compose up --build
 
 Приложение будет доступно на `http://localhost:8000`.
 
-Swagger UI:
+Встроенная HTML-страница со списком endpoints:
 
 ```text
 http://localhost:8000/docs
@@ -34,7 +46,7 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 copy .env.example .env
 alembic upgrade head
-uvicorn app.main:app --reload
+sanic app.main:app --reload --host=0.0.0.0 --port=8000
 ```
 
 По умолчанию `.env.example` ожидает базу:

@@ -1,15 +1,46 @@
 from collections.abc import AsyncGenerator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
+from sanic_testing import TestManager
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.config import Settings, get_settings
-from app.db import Base, get_session
-from app.main import app
+from app.config import Settings
+from app.db import Base
+from app.main import create_app
 from app.models import Account, Payment, User, UserRole
 from app.security import hash_password
+
+
+class SanicClientAdapter:
+    def __init__(self, client):
+        self._client = client
+
+    async def get(self, *args, **kwargs):
+        _, response = await self._client.get(*args, **kwargs)
+        return SanicResponseAdapter(response)
+
+    async def post(self, *args, **kwargs):
+        _, response = await self._client.post(*args, **kwargs)
+        return SanicResponseAdapter(response)
+
+    async def patch(self, *args, **kwargs):
+        _, response = await self._client.patch(*args, **kwargs)
+        return SanicResponseAdapter(response)
+
+    async def delete(self, *args, **kwargs):
+        _, response = await self._client.delete(*args, **kwargs)
+        return SanicResponseAdapter(response)
+
+
+class SanicResponseAdapter:
+    def __init__(self, response):
+        self._response = response
+        self.status_code = response.status_code
+
+    def json(self):
+        return self._response.json
 
 
 @pytest.fixture
@@ -59,29 +90,33 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         )
         await session.commit()
 
-    try:
-        async with Session() as session:
-            yield session
-    finally:
-        app.dependency_overrides.clear()
-        await engine.dispose()
+    async with Session() as session:
+        yield session
+    await engine.dispose()
 
 
 @pytest.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    async def override_session() -> AsyncGenerator[AsyncSession, None]:
-        yield db_session
+    class TestSessionFactory:
+        def __call__(self):
+            return self
 
-    def override_settings() -> Settings:
-        return Settings(
+        async def __aenter__(self) -> AsyncSession:
+            return db_session
+
+        async def __aexit__(self, *_) -> None:
+            return None
+
+    test_app = create_app(
+        app_settings=Settings(
             database_url="sqlite+aiosqlite://",
             jwt_secret_key="test-secret-use-at-least-32-bytes",
             payment_webhook_secret="gfdmhghif38yrf9ew0jkf32",
-        )
+        ),
+        app_session_factory=TestSessionFactory(),
+        dispose=lambda: None,
+    )
+    TestManager(test_app)
 
-    app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_settings] = override_settings
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as test_client:
-        yield test_client
+    yield SanicClientAdapter(test_app.asgi_client)
+    await test_app.asgi_client.aclose()
